@@ -322,6 +322,58 @@
       margin-top: 8px;
       text-align: center;
     }
+
+    /* Monthly cash section */
+    .monthly-cash-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    @media (max-width: 600px) {
+      .monthly-cash-grid { grid-template-columns: 1fr; }
+    }
+
+    .cash-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      text-align: center;
+    }
+
+    .cash-card .label {
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 6px;
+    }
+
+    .cash-card .value {
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .cash-card .sub {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 4px;
+      line-height: 1.4;
+    }
+
+    .section-divider {
+      margin: 20px 0 16px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
   </style>
 </head>
 <body>
@@ -372,6 +424,23 @@
         <label>Retirement Age</label>
         <div class="input-wrap">
           <input type="number" id="retirementAge" value="67" min="40" max="90" />
+        </div>
+      </div>
+    </div>
+
+    <div class="age-row">
+      <div class="field">
+        <label>Life Expectancy</label>
+        <div class="input-wrap has-suffix">
+          <input type="number" id="lifeExpectancy" value="95" min="65" max="110" />
+          <span class="suffix">yrs</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>SS Monthly Benefit</label>
+        <div class="input-wrap has-prefix">
+          <span class="prefix">$</span>
+          <input type="number" id="ssBenefit" value="0" min="0" step="50" />
         </div>
       </div>
     </div>
@@ -459,6 +528,35 @@
 
       <div class="disclaimer">
         <strong>Assumptions:</strong> Conservative = 5%/yr (bonds/mixed), Moderate = 7%/yr (S&amp;P 500 real historical avg), Aggressive = 10%/yr (S&amp;P 500 nominal historical avg). All returns are compounded monthly. Other savings are assumed fully invested. This is an estimate only — past market performance does not guarantee future results.
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:24px;">
+      <h2>Monthly Cash in Retirement</h2>
+      <p style="font-size:0.82rem;color:var(--muted);margin-bottom:16px;" id="monthly-cash-subtitle">
+        Portfolio drawn down over <span id="mc-years">—</span> years · same return rate during retirement
+      </p>
+
+      <div class="monthly-cash-grid">
+        <div class="cash-card conservative">
+          <div class="label">Conservative (5%)</div>
+          <div class="value" id="mc-conservative">—</div>
+          <div class="sub" id="mc-conservative-sub">—</div>
+        </div>
+        <div class="cash-card moderate">
+          <div class="label">Moderate (7%)</div>
+          <div class="value" id="mc-moderate">—</div>
+          <div class="sub" id="mc-moderate-sub">—</div>
+        </div>
+        <div class="cash-card aggressive">
+          <div class="label">Aggressive (10%)</div>
+          <div class="value" id="mc-aggressive">—</div>
+          <div class="sub" id="mc-aggressive-sub">—</div>
+        </div>
+      </div>
+
+      <div class="disclaimer">
+        Monthly cash = portfolio withdrawal + Social Security benefit. Portfolio withdrawal uses the PMT formula assuming continued growth at the same rate through retirement, fully exhausting the balance at life expectancy. Enter your estimated Social Security benefit above to include it.
       </div>
     </div>
   </div>
@@ -549,6 +647,14 @@
     });
   }
 
+  // ─── PMT: monthly withdrawal to exhaust PV over n months at monthly rate r ───
+  function pmt(pv, annualRate, months) {
+    if (months <= 0) return 0;
+    if (annualRate === 0) return pv / months;
+    const r = annualRate / 100 / 12;
+    return pv * r / (1 - Math.pow(1 + r, -months));
+  }
+
   // ─── Core Calculation ────────────────────────────────────────────────────────
   function calculate() {
     const balance401k  = Math.max(0, parseFloat(document.getElementById('balance401k').value)  || 0);
@@ -556,6 +662,8 @@
     const otherCash    = Math.max(0, parseFloat(document.getElementById('otherCash').value)    || 0);
     const currentAge   = Math.max(18, parseInt(document.getElementById('currentAge').value)  || 35);
     const retirementAge = Math.max(currentAge + 1, parseInt(document.getElementById('retirementAge').value) || 67);
+    const lifeExpectancy = Math.max(retirementAge + 1, parseInt(document.getElementById('lifeExpectancy').value) || 95);
+    const ssBenefit    = Math.max(0, parseFloat(document.getElementById('ssBenefit').value) || 0);
 
     const years  = retirementAge - currentAge;
     const months = years * 12;
@@ -565,6 +673,9 @@
       moderate:     RATES.moderate,
       aggressive:   RATES.aggressive,
     };
+
+    const retirementMonths = (lifeExpectancy - retirementAge) * 12;
+    document.getElementById('mc-years').textContent = lifeExpectancy - retirementAge;
 
     // Summary results per scenario
     ['conservative', 'moderate', 'aggressive'].forEach(s => {
@@ -583,6 +694,14 @@
       document.getElementById('bd-401k-start-' + suffix).textContent = fmtShort(total401kStart);
       document.getElementById('bd-contrib-'    + suffix).textContent = fmtShort(totalContrib);
       document.getElementById('bd-other-'      + suffix).textContent = fmtShort(totalOther);
+
+      // Monthly cash in retirement
+      const portfolioPmt = pmt(total, r, retirementMonths);
+      const totalMonthly = portfolioPmt + ssBenefit;
+      document.getElementById('mc-' + s).textContent = fmt(totalMonthly) + '/mo';
+      const subParts = ['Portfolio: ' + fmt(portfolioPmt) + '/mo'];
+      if (ssBenefit > 0) subParts.push('SS: ' + fmt(ssBenefit) + '/mo');
+      document.getElementById('mc-' + s + '-sub').textContent = subParts.join(' · ');
     });
 
     // Build chart data — year-by-year for each scenario
@@ -668,7 +787,7 @@
   }
 
   // ─── Wire up live inputs ──────────────────────────────────────────────────────
-  ['balance401k','monthlyContrib','otherCash','currentAge','retirementAge'].forEach(id => {
+  ['balance401k','monthlyContrib','otherCash','currentAge','retirementAge','lifeExpectancy','ssBenefit'].forEach(id => {
     document.getElementById(id).addEventListener('input', calculate);
   });
 
